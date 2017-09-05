@@ -1,0 +1,19 @@
+   <!-- Author: Johannes Ziegler -->
+   <!-- Date:   2017-06-21        -->
+   
+<launch>
+   <arg 	name="TFtime"     default="10" 		/>
+   <arg  name="tf_US_z"		default="0.12"	/>
+   
+   <!-- Basic tranformations for robot coordinate system -->
+   
+   <node pkg="tf" type="static_transform_publisher" name="tf_map"         args="0 0 0.75 0 0 0           map                 asus        		 $(arg TFtime)"/>         
+   
+   <node pkg="tf" type="static_transform_publisher" name="tf_map_pitch"   args="0 0 0 0 2.285 0    	    asus          	  asus/pitch/rotated   $(arg TFtime)"/>
+                                                                                                              
+   <node pkg="tf" type="static_transform_publisher" name="tf_map_roll"    args="0 0 0 -1.57 0 0        asus/pitch/rotated  asus/roll/rotated    $(arg TFtime)"/>  
+   
+     
+   
+      
+</launch>
