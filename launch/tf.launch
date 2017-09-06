@@ -9,7 +9,7 @@
    
    <node pkg="tf" type="static_transform_publisher" name="tf_map"         args="0 0 0.75 0 0 0           map                 asus        		 $(arg TFtime)"/>         
    
-   <node pkg="tf" type="static_transform_publisher" name="tf_map_pitch"   args="0 0 0 0 2.285 0    	    asus          	  asus/pitch/rotated   $(arg TFtime)"/>
+   <node pkg="tf" type="static_transform_publisher" name="tf_map_pitch"   args="0 0 0 0 1.74 0    	    asus          	  asus/pitch/rotated   $(arg TFtime)"/>
                                                                                                               
    <node pkg="tf" type="static_transform_publisher" name="tf_map_roll"    args="0 0 0 -1.57 0 0        asus/pitch/rotated  asus/roll/rotated    $(arg TFtime)"/>  
    

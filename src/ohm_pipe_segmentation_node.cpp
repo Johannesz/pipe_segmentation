@@ -1,12 +1,9 @@
 #include <iostream>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
-
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
-
 #include <pcl/point_types_conversion.h>
-
 #include <pcl_ros/point_cloud.h>
 #include <boost/foreach.hpp>
 #include <pcl/ModelCoefficients.h>
@@ -19,16 +16,12 @@
 #include <pcl/conversions.h>
 
 
-typedef pcl::PointXYZRGB PointT;
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
 
 ros::Subscriber _cloudInput;
 ros::Publisher  _modelCoefficient;
-ros::Publisher  _modelCoefficient2;
 
 void callbackFindPipe(const PointCloud::ConstPtr& msg) {
-
-   int i = 0;
 
    pcl::NormalEstimation<pcl::PointXYZHSV, pcl::Normal> ne_cy;
    pcl::search::KdTree<pcl::PointXYZHSV>::Ptr tree_cy(new pcl::search::KdTree<pcl::PointXYZHSV>());
@@ -38,7 +31,7 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    pcl::PCDWriter writer;
 
 
-   pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
+   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals( new pcl::PointCloud<pcl::Normal>);
    pcl::ModelCoefficients::Ptr coefficients_plane(new pcl::ModelCoefficients);
    pcl::PointIndices::Ptr inliers_plane(new pcl::PointIndices);
@@ -78,7 +71,7 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    pass.setFilterLimits(0.80, 1.0);
    pass.filter (*cloud_hsv);
 
-   // evlt. noch raus oder clevere Alternative
+   // if possible replace by something better (the following two distance pass through filter
    pass.setInputCloud(cloud_hsv);
    pass.setFilterFieldName("y");
    pass.setFilterLimits(-0.25, 1.0);
@@ -127,6 +120,8 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
 
    // Schleife um Pipes zu Finden
 
+   int i = 0;
+
    do {
       i++;
 
@@ -174,10 +169,7 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    extract_normals.setIndices(inliers_cylinder);
    extract_normals.filter(*cloud_normals);
 
-   //ne_cy.setSearchMethod(tree_cy);
-   //ne_cy.setInputCloud(cloud_hsv_filtered);
-   //ne_cy.setKSearch(50);
-   //ne_cy.compute(*cloud_normals);
+
 
    writer.write("was_noch_übrig_ist.pcd", *cloud_hsv_filtered, false);
    } while(i<5);
@@ -195,7 +187,7 @@ int main(int argc, char** argv) {
    _cloudInput = nh.subscribe("cloud_pcd", 1, callbackFindPipe);
 
    _modelCoefficient = nh.advertise<pcl_msgs::ModelCoefficients> ("pipe_one", 1);
-   _modelCoefficient2 = nh.advertise<pcl_msgs::ModelCoefficients> ("pipe_two", 1);
+
 
    ros::spin();
 }
