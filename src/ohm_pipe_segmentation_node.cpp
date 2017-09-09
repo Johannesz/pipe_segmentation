@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cmath>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <pcl/io/pcd_io.h>
@@ -14,7 +15,7 @@
 #include <pcl/sample_consensus/model_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/conversions.h>
-
+#include <pcl/filters/voxel_grid.h>
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
 
@@ -23,6 +24,15 @@ ros::Publisher  _modelCoefficient;
 
 void callbackFindPipe(const PointCloud::ConstPtr& msg) {
 
+
+   // Objects for Plane Height Estimation
+   pcl::NormalEstimation<pcl::PointXYZRGB, pcl::Normal> cy;
+   pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>());
+   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_plane (new pcl::PointCloud<pcl::PointXYZRGB>);
+   pcl::SACSegmentationFromNormals<pcl::PointXYZRGB, pcl::Normal> seg;
+   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud2(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+   // Objects for Cylinder Search
    pcl::NormalEstimation<pcl::PointXYZHSV, pcl::Normal> ne_cy;
    pcl::search::KdTree<pcl::PointXYZHSV>::Ptr tree_cy(new pcl::search::KdTree<pcl::PointXYZHSV>());
    pcl::SACSegmentationFromNormals<pcl::PointXYZHSV, pcl::Normal> seg_cy;
@@ -30,12 +40,10 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    pcl::PassThrough<pcl::PointXYZHSV> pass;
    pcl::PCDWriter writer;
 
-
    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals( new pcl::PointCloud<pcl::Normal>);
    pcl::ModelCoefficients::Ptr coefficients_plane(new pcl::ModelCoefficients);
    pcl::PointIndices::Ptr inliers_plane(new pcl::PointIndices);
-
 
    pcl::PointCloud<pcl::PointXYZHSV>::Ptr cloud_hsv (new pcl::PointCloud<pcl::PointXYZHSV>);
    pcl::PointCloud<pcl::PointXYZHSV>::Ptr cloud_hsv_filtered (new pcl::PointCloud<pcl::PointXYZHSV>);
@@ -44,9 +52,59 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    pcl::PointCloud<pcl::PointXYZHSV>::Ptr cloud_cylinder(new pcl::PointCloud<pcl::PointXYZHSV>());
    pcl::ExtractIndices<pcl::Normal> extract_normals;
 
+
+   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   // Search for distance between ground and Camera
+
+   // Voxel Grid Filter to reduce the point cloud
+   *cloud2 = *msg;
+   pcl::VoxelGrid<pcl::PointXYZRGB> sor;
+   sor.setInputCloud(cloud2);
+   sor.setLeafSize(0.01f, 0.01f, 0.01f);
+   sor.filter(*cloud_plane);
+
+   // Estimate point normals
+   cy.setSearchMethod(tree);
+   cy.setInputCloud(cloud_plane);
+   cy.setKSearch(50);
+   cy.compute(*cloud_normals);
+
+   // Create the segmentation object for the planar model and set all the parameters
+   seg.setOptimizeCoefficients(true);
+   seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
+   seg.setNormalDistanceWeight(0.1);
+   seg.setMethodType(pcl::SAC_RANSAC);
+   seg.setMaxIterations(100);
+   seg.setDistanceThreshold(0.03);
+   seg.setInputCloud(cloud_plane);
+   seg.setInputNormals(cloud_normals);
+   // Obtain the plane inliers and coefficients
+   seg.segment(*inliers_plane, *coefficients_plane);
+   std::cerr << "Plane coefficients: " << *coefficients_plane << std::endl;
+
+   double heightFromGround = 0.0;
+   double planeX = 0.0;
+   double planeY = 0.0;
+   double planeZ = 0.0;
+   double planed = 0.0;
+
+   planeX = pow(coefficients_plane->values[0], 2.0);
+   planeY = pow(coefficients_plane->values[1], 2.0);
+   planeZ = pow(coefficients_plane->values[2], 2.0);
+   planed = coefficients_plane->values[3];
+
+   // There could be still a problem in the calculation sqrt results in 1
+   heightFromGround = planeX+planeY+planeZ;
+   heightFromGround = sqrt(heightFromGround);
+   heightFromGround =   (planed / heightFromGround ) ;
+   std::cerr << "Camera distance form ground: " << heightFromGround << std::endl << std::endl;
+
+
+   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   // Search for Cylinders
+
    *cloud = *msg;
    std::cerr << "Raw PointCloud has: " << cloud->points.size() << " data points." << std::endl;
-
 
    //convert RGB to HSV
    pcl::PointCloudXYZRGBtoXYZHSV(*cloud, *cloud_hsv);
@@ -100,7 +158,7 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    seg_cy.setInputNormals(cloud_normals);
    // Obtain the plane inliers and coefficients
    seg_cy.segment(*inliers_plane, *coefficients_plane);
-   std::cerr << "Plane coefficients: " << *coefficients_plane << std::endl;
+   //std::cerr << "Plane coefficients: " << *coefficients_plane << std::endl;
 
    // Extract and remove the planar inliers from the input cloud
    extract.setInputCloud(cloud_hsv);
@@ -109,8 +167,8 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    extract.filter(*cloud_hsv_filtered);
 
    // write pointcloud after hsv to the disc for checking -- only for testing purpose
-   std::cerr << "PointCloud after HSV filtering has: " << cloud_hsv_filtered->points.size() << " data points." << std::endl << std::endl;
-   writer.write ("Cloud_after_HSV_filter.pcd", *cloud_hsv_filtered, false);
+   //std::cerr << "PointCloud after HSV filtering has: " << cloud_hsv_filtered->points.size() << " data points." << std::endl << std::endl;
+   //writer.write ("Cloud_after_HSV_filter.pcd", *cloud_hsv_filtered, false);
 
    // Estimate point normals
    ne_cy.setSearchMethod(tree_cy);
@@ -118,7 +176,7 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    ne_cy.setKSearch(50);
    ne_cy.compute(*cloud_normals);
 
-   // Schleife um Pipes zu Finden
+   // loop to find the pipes - at the moment to find a maximum of 5 pipes
 
    int i = 0;
 
@@ -154,7 +212,7 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
    if (cloud_cylinder->points.empty())
       std::cerr << i <<" Cylindrical component not found." << std::endl;
    else {
-      std::cerr << i << "PointCloud representing following cylindrical component: " << cloud_cylinder->points.size() << " data points." << std::endl << std::endl;
+      std::cerr << i << ". PointCloud representing following cylindrical component: " << cloud_cylinder->points.size() << " data points." << std::endl << std::endl;
       writer.write("pipe_found.pcd", *cloud_cylinder, false);
          }
 
@@ -171,10 +229,11 @@ void callbackFindPipe(const PointCloud::ConstPtr& msg) {
 
 
 
-   writer.write("was_noch_übrig_ist.pcd", *cloud_hsv_filtered, false);
+   writer.write("left_over_of_point_cloud.pcd", *cloud_hsv_filtered, false);
    } while(i<5);
 
-
+   // The program sends at the moment the position of all five cylinders - the z coordinate has also to be included of the plane - also it is still
+   // open if it is the best solution to send the coordinates of all cylinders...
 
 
 }
